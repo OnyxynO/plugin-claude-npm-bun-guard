@@ -7,14 +7,23 @@ set -uo pipefail
 
 RACINE="$(cd "$(dirname "$0")/.." && pwd)"
 H="$RACINE/hooks/guard.sh"
-CACHE="${NPM_GUARD_CACHE:-$HOME/.cache/npm-bun-guard/npm-malware.tsv}"
+
+# Isolation stricte du cache : la batterie ne doit JAMAIS écrire dans le cache
+# réel de l'utilisateur (~/.cache/npm-bun-guard/). On EXPORTE les deux
+# variables que guard.sh sait lire — CACHE_DIR (dont dérive aussi le fichier
+# de tampon CACHE_STAMP) et CACHE — vers un répertoire temporaire dédié, créé
+# ici, sans dépendre d'un export préalable fait par l'opérateur.
+export NPM_GUARD_CACHE_DIR
+NPM_GUARD_CACHE_DIR=$(mktemp -d)
+export NPM_GUARD_CACHE="$NPM_GUARD_CACHE_DIR/npm-malware.tsv"
+CACHE="$NPM_GUARD_CACHE"
 SAUVE=$(mktemp)
 DIR=$(mktemp -d)
 ECHECS=0
 
 printf '{"name":"t","version":"1.0.0"}\n' > "$DIR/package.json"
 mkdir -p "$(dirname "$CACHE")"; touch "$CACHE"; cp "$CACHE" "$SAUVE"
-restaurer() { cp "$SAUVE" "$CACHE"; rm -rf "$SAUVE" "$DIR"; }
+restaurer() { rm -rf "$SAUVE" "$DIR" "$NPM_GUARD_CACHE_DIR"; }
 trap restaurer EXIT
 
 decision() {
@@ -36,7 +45,7 @@ verif "npm i left-pad"                "paquet ancien sain"           "-"
 verif "npm i eslint"                  "npm : arbre transitif sain"   "-"
 verif "bun add eslint"                "bun : arbre transitif sain"   "-"
 verif "bun install"                   "bun install (sans paquet)"    "-"
-verif "npm i left-pad \&\& echo keyv"  "nom apres && (ne compte pas)" "-"
+verif "npm i left-pad && echo keyv"   "nom apres && (ne compte pas)" "-"
 
 echo "--- mutation : keyv 4.5.4 declare malveillant ---"
 printf 'keyv\t= 4.5.4\n' >> "$CACHE"

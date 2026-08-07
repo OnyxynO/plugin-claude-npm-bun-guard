@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# guard-npm-install.sh — hook PreToolUse (Bash)
+# guard.sh — hook PreToolUse (Bash)
 #
 # Contrôle les paquets JS AVANT installation, là où le mal se fait : un hook
 # `preinstall` s'exécute avant tout code applicatif.
