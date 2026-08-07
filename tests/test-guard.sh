@@ -37,27 +37,36 @@ verif() { # commande, libellé, attendu
   if [ "${r:--}" = "$3" ]; then echo "OK"; else echo "ECHEC (attendu $3)"; ECHECS=$((ECHECS+1)); fi
 }
 
+# ⚠️ Version d'eslint EPINGLEE (9.9.1, jamais `latest`) : le cooldown de l'étape 5
+# de guard.sh déclenche `ask` pour toute version publiée il y a moins de 3 jours.
+# Sans épingle, le cas casse dès qu'eslint publie une release fraîche — flakiness
+# calendaire sans rapport avec le code testé. 9.9.1 tire toujours `keyv@4.5.4` en
+# transitif (vérifié pour npm et bun), donc la résolution d'arbre et les mutations
+# ci-dessous restent exercées à l'identique.
 echo "--- doivent passer ---"
 verif "ls -la"                        "commande hors gestionnaire"   "-"
 verif "npm run build"                 "npm run"                      "-"
 verif "npm ci"                        "npm ci (arbre sain)"          "-"
 verif "npm i left-pad"                "paquet ancien sain"           "-"
-verif "npm i eslint"                  "npm : arbre transitif sain"   "-"
-verif "bun add eslint"                "bun : arbre transitif sain"   "-"
+verif "npm i eslint@9.9.1"            "npm : arbre transitif sain"   "-"
+verif "bun add eslint@9.9.1"          "bun : arbre transitif sain"   "-"
 verif "bun install"                   "bun install (sans paquet)"    "-"
 verif "npm i left-pad && echo keyv"   "nom apres && (ne compte pas)" "-"
 
 echo "--- mutation : keyv 4.5.4 declare malveillant ---"
 printf 'keyv\t= 4.5.4\n' >> "$CACHE"
-verif "npm i eslint"                  "npm : transitif piege"        "deny"
-verif "bun add eslint"                "bun : transitif piege"        "deny"
+verif "npm i eslint@9.9.1"            "npm : transitif piege"        "deny"
+verif "bun add eslint@9.9.1"          "bun : transitif piege"        "deny"
 cp "$SAUVE" "$CACHE"
 
 echo "--- apres restauration ---"
-verif "npm i eslint"                  "npm : de nouveau sain"        "-"
-verif "bun add eslint"                "bun : de nouveau sain"        "-"
+verif "npm i eslint@9.9.1"            "npm : de nouveau sain"        "-"
+verif "bun add eslint@9.9.1"          "bun : de nouveau sain"        "-"
 
 echo "--- amorcage sans gh (PATH neutralise) ---"
+# ⚠️ Ce cas ne prouve PAS le téléchargement : le cache est déjà rempli.
+# Il exerce le repli sur paquets nommés quand PATH est neutralisé (ni gh, ni npm, ni bun).
+# La preuve du téléchargement est le cas suivant, sur cache vide.
 CACHE_VIDE=$(mktemp -d)
 printf 'keyv\t= 4.5.4\n' > "$CACHE_VIDE/npm-malware.tsv"
 r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i keyv@4.5.4"}}' "$DIR" \
