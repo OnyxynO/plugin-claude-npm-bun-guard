@@ -191,7 +191,7 @@ mention_fraicheur() {
   if [ "$age" -gt 7 ]; then
     printf '⚠️ Base vieille de %s jours (%s) — le rafraîchissement ne fonctionne plus.' "$age" "$d"
   else
-    printf 'Base : %s entrées, mise à jour le %s.' "$(wc -l < "$CACHE_MALWARE" | tr -d ' ')" "$d"
+    printf 'Base : %s entrées, mise à jour le %s.' "$(cat "$CACHE_MALWARE" 2>/dev/null | wc -l | tr -d ' ')" "$d"
   fi
 }
 
@@ -329,7 +329,9 @@ La résolution de l'arbre n'a pas abouti (gestionnaire autre que npm, ou projet
 sans manifeste), donc la version installée reste inconnue. Or le nom seul ne
 prouve rien : \`keyv\` est parfaitement sain en 4.5.4 et piégé en 6.0.0.
 
-À vérifier avant de confirmer : quelle version sera réellement installée."
+À vérifier avant de confirmer : quelle version sera réellement installée.
+
+$(mention_fraicheur)"
   fi
 
   if [ "${certains:-0}" -gt 0 ]; then

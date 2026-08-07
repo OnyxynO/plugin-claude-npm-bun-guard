@@ -104,10 +104,29 @@ printf '%-46s %-6s ' "NPM_GUARD_DISABLE=1 desactive tout" "${r:--}"
 if [ "${r:--}" = "-" ]; then echo "OK"; else echo "ECHEC (attendu -)"; ECHECS=$((ECHECS+1)); fi
 cp "$SAUVE" "$CACHE"
 
-r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i hono"}}' "$DIR" \
-  | NPM_GUARD_COOLDOWN_DAYS=0 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+# ⚠️ Cas déterministe, indépendant du calendrier de publication npm — le miroir
+# du piège documenté plus haut sur eslint@9.9.1. Un paquet non épinglé dont le
+# cooldown se déclencherait « par chance » (parce qu'il a été publié il y a
+# moins de N jours à la date du run) redeviendrait vert dès que le calendrier
+# change, sans rien prouver. On force donc le déclenchement de façon
+# structurelle : `is-number` est un paquet ancien (publié en 2018), stable et
+# jamais retiré du registre — son âge en jours dépasse 3 mais reste toujours
+# inférieur à 99999, quelle que soit la date du run. La paire ci-dessous prouve
+# deux choses indépendamment du calendrier : que la quarantaine sait se
+# déclencher (99999 jours ⇒ ask), et que 0 la désactive (0 jour ⇒ -).
+CACHE_COOLDOWN=$(mktemp -d)
+r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i is-number"}}' "$DIR" \
+  | NPM_GUARD_CACHE_DIR="$CACHE_COOLDOWN" NPM_GUARD_CACHE="$CACHE_COOLDOWN/npm-malware.tsv" \
+    NPM_GUARD_COOLDOWN_DAYS=99999 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+printf '%-46s %-6s ' "COOLDOWN_DAYS=99999 declenche toujours" "${r:--}"
+if [ "${r:--}" = "ask" ]; then echo "OK"; else echo "ECHEC (attendu ask)"; ECHECS=$((ECHECS+1)); fi
+
+r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i is-number"}}' "$DIR" \
+  | NPM_GUARD_CACHE_DIR="$CACHE_COOLDOWN" NPM_GUARD_CACHE="$CACHE_COOLDOWN/npm-malware.tsv" \
+    NPM_GUARD_COOLDOWN_DAYS=0 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
 printf '%-46s %-6s ' "COOLDOWN_DAYS=0 desactive la quarantaine" "${r:--}"
 if [ "${r:--}" = "-" ]; then echo "OK"; else echo "ECHEC (attendu -)"; ECHECS=$((ECHECS+1)); fi
+rm -rf "$CACHE_COOLDOWN"
 
 echo
 if [ "$ECHECS" -eq 0 ]; then echo "TOUS LES CAS PASSENT"; else echo "$ECHECS ECHEC(S)"; fi
