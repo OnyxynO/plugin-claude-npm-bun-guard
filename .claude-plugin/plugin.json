@@ -1,0 +1,9 @@
+{
+  "name": "plugin-claude-npm-bun-guard",
+  "version": "0.1.0",
+  "description": "Modèle de garde-fou d'installation npm/bun : refuse les paquets malveillants connus (arbre transitif inclus) et met en quarantaine les versions publiées depuis moins de 3 jours.",
+  "author": {
+    "name": "Sébastien Etievant"
+  },
+  "homepage": "https://github.com/OnyxynO/plugin-claude-npm-bun-guard"
+}

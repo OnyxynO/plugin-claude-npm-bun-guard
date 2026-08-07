@@ -1,0 +1,13 @@
+{
+  "name": "plugin-claude-npm-bun-guard",
+  "owner": {
+    "name": "Sébastien Etievant"
+  },
+  "plugins": [
+    {
+      "name": "plugin-claude-npm-bun-guard",
+      "source": "./",
+      "description": "Garde-fou d'installation npm/bun — modèle à adapter."
+    }
+  ]
+}

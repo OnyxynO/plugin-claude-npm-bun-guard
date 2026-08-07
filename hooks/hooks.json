@@ -1,0 +1,18 @@
+{
+  "description": "Garde-fou d'installation npm/bun — contrôle l'arbre de dépendances avant que le hook preinstall ne s'exécute.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"",
+            "timeout": 25,
+            "statusMessage": "Contrôle des paquets à installer..."
+          }
+        ]
+      }
+    ]
+  }
+}
