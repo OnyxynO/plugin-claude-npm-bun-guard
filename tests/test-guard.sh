@@ -57,6 +57,36 @@ echo "--- apres restauration ---"
 verif "npm i eslint"                  "npm : de nouveau sain"        "-"
 verif "bun add eslint"                "bun : de nouveau sain"        "-"
 
+echo "--- amorcage sans gh (PATH neutralise) ---"
+CACHE_VIDE=$(mktemp -d)
+printf 'keyv\t= 4.5.4\n' > "$CACHE_VIDE/npm-malware.tsv"
+r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i keyv@4.5.4"}}' "$DIR" \
+  | env PATH="/usr/bin:/bin:/usr/sbin:/sbin" NPM_GUARD_CACHE="$CACHE_VIDE/npm-malware.tsv" \
+    bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+printf '%-46s %-6s ' "sans gh : le controle mord quand meme" "${r:--}"
+if [ "${r:--}" = "deny" ]; then echo "OK"; else echo "ECHEC (attendu deny)"; ECHECS=$((ECHECS+1)); fi
+rm -rf "$CACHE_VIDE"
+
+echo "--- amorcage par telechargement direct (cache vide, PATH neutralise) ---"
+# Contrairement au cas précédent (cache déjà rempli), celui-ci part d'un cache
+# VIDE et pointe NPM_GUARD_DB_URL vers une source locale : seul un vrai
+# téléchargement peut le faire passer au vert. C'est la preuve par mutation
+# exigée par le principe 21 — sans `rafraichir_base` sachant télécharger, ce
+# cas échoue nécessairement.
+CACHE_TELECHARGE_DIR=$(mktemp -d)
+SOURCE_DISTANTE=$(mktemp)
+# Le contrôle `> 100 lignes` de rafraichir_base rejette une source trop
+# courte (page d'erreur HTML) : il faut donc plus de 100 lignes ici aussi.
+{ printf 'keyv\t= 4.5.4\n'; i=0; while [ "$i" -lt 150 ]; do printf 'paquet-bidon-%d\t*\n' "$i"; i=$((i+1)); done; } > "$SOURCE_DISTANTE"
+r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i keyv@4.5.4"}}' "$DIR" \
+  | env PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        NPM_GUARD_CACHE="$CACHE_TELECHARGE_DIR/npm-malware.tsv" \
+        NPM_GUARD_DB_URL="file://$SOURCE_DISTANTE" \
+    bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+printf '%-46s %-6s ' "sans gh : amorcage via telechargement" "${r:--}"
+if [ "${r:--}" = "deny" ]; then echo "OK"; else echo "ECHEC (attendu deny)"; ECHECS=$((ECHECS+1)); fi
+rm -rf "$CACHE_TELECHARGE_DIR" "$SOURCE_DISTANTE"
+
 echo
 if [ "$ECHECS" -eq 0 ]; then echo "TOUS LES CAS PASSENT"; else echo "$ECHECS ECHEC(S)"; fi
 exit "$ECHECS"

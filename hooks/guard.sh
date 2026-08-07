@@ -128,6 +128,20 @@ jours_depuis() {
 }
 
 rafraichir_base() {
+  local URL_BASE="${NPM_GUARD_DB_URL:-https://raw.githubusercontent.com/OnyxynO/plugin-claude-npm-bun-guard/main/data/npm-malware.tsv}"
+
+  # Amorçage sans authentification : un seul fichier, pas de rate limit.
+  # C'est ce qui rend le plugin utilisable par quelqu'un qui n'a pas `gh`.
+  if [ ! -s "$CACHE_MALWARE" ]; then
+    local tmp2; tmp2=$(mktemp) || return 0
+    if curl -sf --compressed --max-time 20 "$URL_BASE" -o "$tmp2" 2>/dev/null \
+       && [ "$(wc -l < "$tmp2" | tr -d ' ')" -gt 100 ]; then
+      mv "$tmp2" "$CACHE_MALWARE"
+      date -u +%Y-%m-%d > "$CACHE_STAMP"
+    fi
+    rm -f "$tmp2" 2>/dev/null
+  fi
+
   command -v gh >/dev/null 2>&1 || return 0
 
   local depuis age
