@@ -96,6 +96,19 @@ printf '%-46s %-6s ' "sans gh : amorcage via telechargement" "${r:--}"
 if [ "${r:--}" = "deny" ]; then echo "OK"; else echo "ECHEC (attendu deny)"; ECHECS=$((ECHECS+1)); fi
 rm -rf "$CACHE_TELECHARGE_DIR" "$SOURCE_DISTANTE"
 
+echo "--- configuration ---"
+printf 'keyv\t= 4.5.4\n' >> "$CACHE"
+r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i eslint"}}' "$DIR" \
+  | NPM_GUARD_DISABLE=1 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+printf '%-46s %-6s ' "NPM_GUARD_DISABLE=1 desactive tout" "${r:--}"
+if [ "${r:--}" = "-" ]; then echo "OK"; else echo "ECHEC (attendu -)"; ECHECS=$((ECHECS+1)); fi
+cp "$SAUVE" "$CACHE"
+
+r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i hono"}}' "$DIR" \
+  | NPM_GUARD_COOLDOWN_DAYS=0 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+printf '%-46s %-6s ' "COOLDOWN_DAYS=0 desactive la quarantaine" "${r:--}"
+if [ "${r:--}" = "-" ]; then echo "OK"; else echo "ECHEC (attendu -)"; ECHECS=$((ECHECS+1)); fi
+
 echo
 if [ "$ECHECS" -eq 0 ]; then echo "TOUS LES CAS PASSENT"; else echo "$ECHECS ECHEC(S)"; fi
 exit "$ECHECS"

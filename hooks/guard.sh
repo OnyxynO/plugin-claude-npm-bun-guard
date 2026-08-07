@@ -21,7 +21,11 @@
 
 set -uo pipefail
 
-COOLDOWN_JOURS=3
+# Désactivation complète — première chose lue, pour qu'un utilisateur bloqué
+# puisse toujours reprendre la main sans désinstaller le plugin.
+[ -n "${NPM_GUARD_DISABLE:-}" ] && exit 0
+
+COOLDOWN_JOURS="${NPM_GUARD_COOLDOWN_DAYS:-3}"
 TIMEOUT_RESEAU=8
 FENETRE_AMORCAGE=7          # jours, si aucun cache local n'existe encore
 PEREMPTION_CACHE=30         # jours, au-delà on repart d'un amorçage
@@ -175,6 +179,21 @@ rafraichir_base() {
 }
 
 rafraichir_base
+
+# Une base périmée en silence donne une fausse assurance — pire que pas d'outil.
+# Toute décision porte donc la date de la base, et signale l'ancienneté au-delà
+# d'une semaine.
+mention_fraicheur() {
+  local d age
+  d=$(cat "$CACHE_STAMP" 2>/dev/null)
+  [ -n "$d" ] || { printf 'Base : date inconnue.'; return; }
+  age=$(jours_depuis "$d")
+  if [ "$age" -gt 7 ]; then
+    printf '⚠️ Base vieille de %s jours (%s) — le rafraîchissement ne fonctionne plus.' "$age" "$d"
+  else
+    printf 'Base : %s entrées, mise à jour le %s.' "$(wc -l < "$CACHE_MALWARE" | tr -d ' ')" "$d"
+  fi
+}
 
 # --- 3. résoudre l'arbre réellement installé ---------------------------------
 # `--dry-run` résout les dépendances SANS exécuter le moindre script : c'est le
@@ -332,7 +351,7 @@ worm keyv du 2026-08-04.
 À faire : identifier qui tire ce paquet (\`npm why <paquet>\`), puis épingler une
 version saine via \`overrides\` (bornée à la lignée, jamais en \`>=\`).
 
-Base consultée : $(wc -l < "$CACHE_MALWARE" | tr -d ' ') entrées, mise à jour le $(cat "$CACHE_STAMP" 2>/dev/null || echo '?')."
+$(mention_fraicheur)"
   fi
 fi
 
@@ -372,7 +391,7 @@ for spec in $paquets_nommes; do
     || date -u -j -f "%Y-%m-%dT%H:%M:%S" "${publie%.*}" +%s 2>/dev/null) || continue
   age=$(( ( $(date -u +%s) - ts_publie ) / 86400 ))
 
-  if [ "$age" -lt "$COOLDOWN_JOURS" ]; then
+  if [ "$COOLDOWN_JOURS" -gt 0 ] 2>/dev/null && [ "$age" -lt "$COOLDOWN_JOURS" ]; then
     demander "⚠️  « $nom@$version » a été publiée il y a ${age} jour(s) — moins que le délai de sécurité de ${COOLDOWN_JOURS} jours.
 
 Une version très fraîche est le seul signal disponible AVANT qu'une compromission
@@ -384,7 +403,8 @@ Rien n'indique un problème ici — c'est un délai, pas une accusation. Options
   • installer une version antérieure déjà éprouvée ;
   • confirmer si cette version est réellement nécessaire maintenant.
 
-Publiée le : $publie"
+Publiée le : $publie
+$(mention_fraicheur)"
   fi
 done
 
