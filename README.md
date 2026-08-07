@@ -33,7 +33,7 @@ intercepte l'instant où le script `preinstall` va s'exécuter.
 |---|---|
 | Un paquet de l'arbre à installer est un malware connu (nom **et** version) | Refus |
 | Une version demandée a moins de 3 jours | Demande de confirmation |
-| Le reste | Silence — instantané pour une commande hors gestionnaire de paquets (`ls`, `npm run build`…) ; de l'ordre de quelques secondes pour une installation qui passe, le temps de la requête réseau du contrôle de quarantaine (`registry.npmjs.org`) |
+| Le reste | Silence — quelques millisecondes hors gestionnaire de paquets (`ls`, `npm run build`…) ; de l'ordre de 300 ms pour une installation, le temps du `--dry-run` et du contrôle de quarantaine ; quelques secondes une fois par jour, lorsque la base est rafraîchie |
 
 L'arbre est résolu par `--dry-run`, qui calcule les dépendances **sans exécuter aucun
 script** et sans rien écrire sur le disque.
