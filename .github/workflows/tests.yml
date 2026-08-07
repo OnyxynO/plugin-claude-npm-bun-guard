@@ -1,0 +1,28 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  batterie:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Vérifier la syntaxe du script
+        run: bash -n hooks/guard.sh
+
+      # Pas de NPM_GUARD_CACHE ici : tests/test-guard.sh exporte lui-même
+      # NPM_GUARD_CACHE_DIR/NPM_GUARD_CACHE vers un mktemp -d dès ses
+      # premières lignes (isolation du cache réel, tâche 2) — une valeur
+      # positionnée dans l'environnement du job serait aussitôt écrasée.
+      - name: Lancer la batterie
+        run: bash tests/test-guard.sh

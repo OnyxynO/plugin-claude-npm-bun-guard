@@ -1,0 +1,51 @@
+name: Rafraîchir la base des paquets malveillants
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Récupérer les advisories malware npm (30 jours glissants)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          depuis=$(date -u -d '30 days ago' +%Y-%m-%d)
+          # ⚠️ Cet endpoint IGNORE le paramètre `page` : il pagine par curseur.
+          # Une boucle `for page in 1 2` relit la même page et plafonne à 100
+          # entrées sur plusieurs milliers. `--paginate` suit l'en-tête Link.
+          gh api --paginate \
+            "/advisories?ecosystem=npm&type=malware&per_page=100&published=>=$depuis" \
+            -q '.[]?|.vulnerabilities[]?|"\(.package.name)\t\(.vulnerable_version_range // "*")"' \
+            | sort -u > data/npm-malware.tsv
+
+      - name: Refuser une base tronquée
+        run: |
+          n=$(wc -l < data/npm-malware.tsv)
+          echo "entrées : $n"
+          # Sans ce contrôle, une pagination cassée publierait une base
+          # tronquée qui paraîtrait parfaitement valide.
+          if [ "$n" -lt 1000 ]; then
+            echo "::error::Base tronquée ($n entrées, attendu > 1000) — publication annulée."
+            exit 1
+          fi
+
+      - name: Commiter si la base a changé
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet data/npm-malware.tsv; then
+            echo "aucun changement"
+          else
+            git add data/npm-malware.tsv
+            git commit -m "data: rafraîchir la base des paquets malveillants ($(date -u +%F))"
+            git push
+          fi
