@@ -6,8 +6,9 @@ Garde-fou qui contrôle les paquets JS **avant** installation, dans Claude Code.
 
 **C'est un modèle, pas un produit maintenu.**
 
-- **Couvre npm et bun uniquement.** `pnpm` et `yarn` ne sont pas gérés — voir
-  « Adapter à votre gestionnaire ».
+- **Couvre npm et bun uniquement.** Pour `pnpm`/`yarn` : couverture partielle — pas de
+  résolution de l'arbre transitif, seuls les paquets nommés explicitement sont contrôlés.
+  Voir « Adapter à votre gestionnaire ».
 - **Vous en devenez mainteneur.** Les formats de sortie de `npm`/`bun` changent avec
   leurs versions, l'API GitHub des advisories peut évoluer. Quand quelque chose casse,
   ouvrez `hooks/guard.sh` avec Claude Code et adaptez-le : c'est le mode d'emploi prévu.
@@ -32,7 +33,7 @@ intercepte l'instant où le script `preinstall` va s'exécuter.
 |---|---|
 | Un paquet de l'arbre à installer est un malware connu (nom **et** version) | Refus |
 | Une version demandée a moins de 3 jours | Demande de confirmation |
-| Le reste | Silence (~16 ms) |
+| Le reste | Silence — instantané pour une commande hors gestionnaire de paquets (`ls`, `npm run build`…) ; de l'ordre de quelques secondes pour une installation qui passe, le temps de la requête réseau du contrôle de quarantaine (`registry.npmjs.org`) |
 
 L'arbre est résolu par `--dry-run`, qui calcule les dépendances **sans exécuter aucun
 script** et sans rien écrire sur le disque.
