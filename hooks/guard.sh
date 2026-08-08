@@ -139,8 +139,8 @@ rafraichir_base() {
   if [ ! -s "$CACHE_MALWARE" ]; then
     local tmp2; tmp2=$(mktemp) || return 0
     if curl -sf --compressed --max-time 20 "$URL_BASE" -o "$tmp2" 2>/dev/null \
-       && [ "$(wc -l < "$tmp2" | tr -d ' ')" -gt 100 ]; then
-      mv "$tmp2" "$CACHE_MALWARE"
+       && [ "$(wc -l < "$tmp2" | tr -d ' ')" -gt 100 ] \
+       && mv "$tmp2" "$CACHE_MALWARE"; then
       date -u +%Y-%m-%d > "$CACHE_STAMP"
     fi
     rm -f "$tmp2" 2>/dev/null
@@ -172,8 +172,17 @@ rafraichir_base() {
       "/advisories?ecosystem=npm&type=malware&per_page=100&published=>=$depuis" \
       -q '.[]?|.vulnerabilities[]?|"\(.package.name)\t\(.vulnerable_version_range // "*")"' \
       >"$tmp" 2>/dev/null && [ -s "$tmp" ]; then
-    cat "$CACHE_MALWARE" "$tmp" 2>/dev/null | sort -u > "$tmp.fusion" && mv "$tmp.fusion" "$CACHE_MALWARE"
-    date -u +%Y-%m-%d > "$CACHE_STAMP"
+    # ⚠️ `cat "$CACHE_MALWARE" "$tmp"` échoue (exit 1) si $CACHE_MALWARE n'existe
+    # pas encore (tout premier run). Avec `set -o pipefail`, ce 1 se propage au
+    # pipeline même si `sort` a réussi — le `&&` court-circuite alors le `mv` et
+    # la base n'est JAMAIS écrite, en silence. Le groupement `{ …; }` isole le
+    # `cat` de la base (qui peut légitimement échouer si le fichier est absent)
+    # du `cat` du delta téléchargé (qui doit, lui, réussir) : seule l'absence de
+    # $tmp doit faire échouer la fusion.
+    if { cat "$CACHE_MALWARE" 2>/dev/null; cat "$tmp"; } | sort -u > "$tmp.fusion" \
+        && mv "$tmp.fusion" "$CACHE_MALWARE"; then
+      date -u +%Y-%m-%d > "$CACHE_STAMP"
+    fi
   fi
   rm -f "$tmp" "$tmp.fusion" 2>/dev/null
 }
