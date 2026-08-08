@@ -229,6 +229,107 @@ fi
 arreter_serveur 2>/dev/null
 rm -rf "$FAUX_PATH_DIR" "$SERVEUR_DIR"
 
+echo "--- gh complete apres un curl reussi, meme jour (task-9 bis) ---"
+# Le curl seul amène jusqu'à ~24 h de retard (le dépôt ne régénère
+# data/npm-malware.tsv qu'à 5 h UTC) : quand `gh` est disponible, il doit
+# enchaîner APRÈS un curl réussi pour couvrir les advisories du jour même —
+# sans pour autant repartir à chaque commande si le stamp était déjà à
+# aujourd'hui avant ce run (garde-fou anti-régression de latence).
+FAUX_PATH_DIR2=$(mktemp -d)
+for bin in bash jq curl mktemp sort mv rm wc date cat awk grep sed tr head; do
+  chemin=$(command -v "$bin" 2>/dev/null) || continue
+  ln -s "$chemin" "$FAUX_PATH_DIR2/$bin"
+done
+
+# Faux `gh` déterministe : n'appelle jamais le vrai GitHub, journalise
+# chaque invocation (compteur, un fichier) et renvoie un paquet sentinelle
+# DISTINCT de celui servi par le curl, pour prouver lequel des deux a tourné.
+FAUX_GH_DIR=$(mktemp -d)
+COMPTEUR_GH="$FAUX_GH_DIR/appels"
+: > "$COMPTEUR_GH"
+cat > "$FAUX_GH_DIR/gh" <<EOF
+#!/usr/bin/env bash
+printf 'x\n' >> "$COMPTEUR_GH"
+case "\$1" in
+  api) printf 'guard-test-sentinelle-gh\t*\n'; exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$FAUX_GH_DIR/gh"
+PATH_AVEC_FAUX_GH="$FAUX_GH_DIR:$FAUX_PATH_DIR2"
+
+# Serveur HTTP local dédié pour le curl (instance distincte de celle
+# arrêtée ci-dessus).
+SERVEUR_DIR2=$(mktemp -d)
+{ printf 'guard-test-sentinelle-curl\t*\n'; i=0; while [ "$i" -lt 150 ]; do printf 'paquet-bidon-%d\t*\n' "$i"; i=$((i+1)); done; } > "$SERVEUR_DIR2/npm-malware.tsv"
+python3 -u -m http.server 0 --directory "$SERVEUR_DIR2" --bind 127.0.0.1 > "$SERVEUR_DIR2/serveur.log" 2>&1 &
+SERVEUR_PID2=$!
+PORT2=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  PORT2=$(grep -oE 'port [0-9]+' "$SERVEUR_DIR2/serveur.log" 2>/dev/null | grep -oE '[0-9]+')
+  [ -n "$PORT2" ] && break
+  sleep 0.2
+done
+arreter_serveur2() { kill "$SERVEUR_PID2" 2>/dev/null; wait "$SERVEUR_PID2" 2>/dev/null; }
+
+if [ -z "$PORT2" ]; then
+  echo "ECHEC (serveur HTTP local n'a pas démarré)"; ECHECS=$((ECHECS+1))
+else
+  URL_LOCALE2="http://127.0.0.1:$PORT2/npm-malware.tsv"
+
+  # Cas 1 : base périmée (stamp d'il y a 2 jours) → curl réussit DANS ce
+  # run → gh doit enchaîner une fois pour couvrir le jour même.
+  CACHE_GH_DIR=$(mktemp -d)
+  printf 'ancien-paquet\t*\n' > "$CACHE_GH_DIR/npm-malware.tsv"
+  date -u -v-2d +%Y-%m-%d 2>/dev/null > "$CACHE_GH_DIR/npm-malware.stamp" \
+    || date -u -d "-2 days" +%Y-%m-%d > "$CACHE_GH_DIR/npm-malware.stamp"
+
+  T0=$(date +%s.%N 2>/dev/null || date +%s)
+  printf '{"cwd":"%s","tool_input":{"command":"npm i left-pad"}}' "$DIR" \
+    | env -i PATH="$PATH_AVEC_FAUX_GH" HOME="$HOME" \
+          NPM_GUARD_CACHE_DIR="$CACHE_GH_DIR" \
+          NPM_GUARD_CACHE="$CACHE_GH_DIR/npm-malware.tsv" \
+          NPM_GUARD_DB_URL="$URL_LOCALE2" \
+      bash "$H" >/dev/null 2>&1
+  T1=$(date +%s.%N 2>/dev/null || date +%s)
+
+  curl_ok=false
+  grep -q '^guard-test-sentinelle-curl' "$CACHE_GH_DIR/npm-malware.tsv" 2>/dev/null && curl_ok=true
+  gh_ok=false
+  grep -q '^guard-test-sentinelle-gh' "$CACHE_GH_DIR/npm-malware.tsv" 2>/dev/null && gh_ok=true
+  appels_cas1=$(wc -l < "$COMPTEUR_GH" 2>/dev/null | tr -d ' ')
+
+  printf '%-46s %-6s ' "curl reussi : gh enchaine (meme run)" "$([ "$gh_ok" = true ] && echo oui || echo non)"
+  if [ "$curl_ok" = true ] && [ "$gh_ok" = true ] && [ "${appels_cas1:-0}" -eq 1 ]; then
+    echo "OK"
+  else
+    echo "ECHEC (curl=$curl_ok, gh=$gh_ok, appels=$appels_cas1)"; ECHECS=$((ECHECS+1))
+  fi
+  echo "  latence mesurée (curl amorçage + gh du jour) : $(awk -v a="$T0" -v b="$T1" 'BEGIN{printf "%.3f s", b-a}' 2>/dev/null)"
+
+  # Cas 2 : deuxième run le MÊME jour, stamp déjà à aujourd'hui (issu du
+  # cas 1) → ni curl ni gh. Serveur coupé ET compteur gh remis à zéro juste
+  # avant : le test est discriminant sur les DEUX mécanismes à la fois.
+  arreter_serveur2
+  : > "$COMPTEUR_GH"
+
+  printf '{"cwd":"%s","tool_input":{"command":"npm i left-pad"}}' "$DIR" \
+    | env -i PATH="$PATH_AVEC_FAUX_GH" HOME="$HOME" \
+          NPM_GUARD_CACHE_DIR="$CACHE_GH_DIR" \
+          NPM_GUARD_CACHE="$CACHE_GH_DIR/npm-malware.tsv" \
+          NPM_GUARD_DB_URL="$URL_LOCALE2" \
+      bash "$H" >/dev/null 2>&1
+
+  appels_cas2=$(wc -l < "$COMPTEUR_GH" 2>/dev/null | tr -d ' ')
+  printf '%-46s %-6s ' "meme jour, 2e run : ni curl ni gh" "${appels_cas2:-0} appel(s)"
+  if [ "${appels_cas2:-0}" -eq 0 ]; then echo "OK"; else echo "ECHEC (gh rappelé alors que le stamp était déjà du jour)"; ECHECS=$((ECHECS+1)); fi
+
+  rm -rf "$CACHE_GH_DIR"
+fi
+
+arreter_serveur2 2>/dev/null
+rm -rf "$FAUX_PATH_DIR2" "$FAUX_GH_DIR" "$SERVEUR_DIR2"
+
 echo "--- configuration ---"
 printf 'keyv\t= 4.5.4\n' >> "$CACHE"
 r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i eslint"}}' "$DIR" \

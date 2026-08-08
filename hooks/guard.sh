@@ -143,19 +143,30 @@ rafraichir_base() {
   local age_stamp=9999
   [ -s "$CACHE_STAMP" ] && age_stamp=$(jours_depuis "$(cat "$CACHE_STAMP")")
 
+  # Drapeau LOCAL À CE RUN — ne survit pas d'une commande à l'autre. Il
+  # distingue les deux situations qui produisent toutes deux `age == 0` plus
+  # bas : le curl vient de réussir À L'INSTANT (le stamp sort d'être écrit),
+  # contre le stamp déjà à aujourd'hui depuis un run précédent. Sans cette
+  # distinction, le garde-fou anti-répétition de `gh` (L. ~180) ne peut pas
+  # savoir laquelle des deux il regarde.
+  local curl_vient_de_reussir=false
   if [ ! -s "$CACHE_MALWARE" ] || [ "$age_stamp" -gt 0 ]; then
     local tmp2; tmp2=$(mktemp) || return 0
     if curl -sf --compressed --max-time 20 "$URL_BASE" -o "$tmp2" 2>/dev/null \
        && [ "$(wc -l < "$tmp2" | tr -d ' ')" -gt 100 ] \
        && mv "$tmp2" "$CACHE_MALWARE"; then
       date -u +%Y-%m-%d > "$CACHE_STAMP"
+      curl_vient_de_reussir=true
     fi
     rm -f "$tmp2" 2>/dev/null
   fi
 
-  # L'incrémental `gh` COMPLÈTE le curl, il ne le remplace pas : s'il n'est
-  # pas là, l'amorçage ci-dessus reste le seul mécanisme — et c'est déjà
-  # suffisant pour ne jamais rester figé plus d'un jour.
+  # L'incrémental `gh` COMPLÈTE le curl, il ne le remplace pas : quand le
+  # curl vient de réussir DANS CE RUN, `gh` enchaîne pour couvrir les
+  # advisories du jour même (le curl amène jusqu'à ~24 h de retard — le dépôt
+  # ne régénère `data/npm-malware.tsv` qu'à 5 h UTC — `gh` donne le temps
+  # réel). Sans `gh`, l'amorçage ci-dessus reste le seul mécanisme, ce qui
+  # suffit à ne jamais rester figé plus d'un jour.
   command -v gh >/dev/null 2>&1 || return 0
 
   local depuis age
@@ -166,7 +177,13 @@ rafraichir_base() {
       : > "$CACHE_MALWARE"
     else
       depuis=$(cat "$CACHE_STAMP")
-      [ "$age" -le 0 ] && return 0   # déjà à jour aujourd'hui
+      # Déjà à jour aujourd'hui ET pas de curl dans CE run → rien à faire.
+      # C'est le garde-fou qui empêche `gh api` de repartir à chaque commande
+      # interceptée dans la journée (régression de latence majeure sinon).
+      # Si le curl vient de réussir, on laisse passer : `depuis` vaut déjà la
+      # date du jour, donc l'appel `gh` ci-dessous ne ramène que les
+      # advisories publiées aujourd'hui — quelques entrées, pas 4000.
+      [ "$age" -le 0 ] && [ "$curl_vient_de_reussir" != true ] && return 0
     fi
   else
     # Amorçage borné : une fenêtre courte pour rester sous le timeout du hook.
