@@ -44,7 +44,8 @@ script** et sans rien écrire sur le disque.
     /plugin install plugin-claude-npm-bun-guard@plugin-claude-npm-bun-guard
 
 Aucune configuration requise. `gh` n'est pas nécessaire — la base est téléchargée depuis
-ce dépôt. S'il est présent et authentifié, elle est complétée de façon incrémentale.
+ce dépôt, puis **réactualisée une fois par jour** (64 Ko compressés). S'il est présent et
+authentifié, il complète ensuite avec les advisories publiées depuis, dans la journée.
 
 ## Réglages
 
@@ -82,13 +83,19 @@ Le hook affiche la date de sa base à chaque décision, et avertit au-delà de 7
 - Un paquet compromis dont l'advisory n'existe pas encore n'est pas détecté par le
   contrôle malware — c'est le rôle de la quarantaine de 3 jours, qui ne couvre pas une
   version piégée publiée il y a plus longtemps sans avoir été détectée.
+- **La quarantaine ne regarde que les paquets que vous nommez**, pas l'arbre résolu — à la
+  différence du contrôle malware. Une dépendance transitive fraîchement piégée et pas encore
+  déclarée échappe donc aux deux contrôles. C'est le trou que la mise à jour quotidienne de la
+  base réduit sans le fermer.
 - `pnpm` et `yarn` : pas de résolution d'arbre.
 - Si le téléchargement de `data/npm-malware.tsv` échoue et que seul `gh` est disponible,
   l'amorçage ne couvre que les **7 derniers jours** (de l'ordre de 4 000 entrées contre
   11 000), et les jours suivants avancent par incréments sans jamais remonter cet
   historique. Le repli protège donc moins que le chemin nominal.
-- Réseau coupé, `jq` ou `python3` absents : le hook laisse passer. Un garde-fou qui casse
-  le travail hors ligne finit désactivé.
+- Réseau indisponible, `jq` ou `python3` absents : le hook laisse passer. Un garde-fou qui
+  casse le travail finit désactivé. En pratique le cas n'est pas « hors ligne » — Claude Code
+  ne fonctionne pas sans réseau — mais **réseau filtré** : un proxy d'entreprise qui bloque
+  `raw.githubusercontent.com` tout en laissant passer le reste.
 
 ## Tests
 
