@@ -8,6 +8,13 @@ on:
 permissions:
   contents: write
 
+# Ce job pousse sur main : deux exécutions qui se chevauchent (un dispatch
+# manuel pendant le cron) produiraient deux pushes concurrents, dont le second
+# échouerait en non-fast-forward. On sérialise sans annuler celle en cours.
+concurrency:
+  group: refresh-db
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest

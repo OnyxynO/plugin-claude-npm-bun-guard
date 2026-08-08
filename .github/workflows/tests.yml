@@ -5,6 +5,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Dépôt public : n'importe qui peut ouvrir une PR, dont le code s'exécute ici.
+# Le jeton n'a donc que la lecture, explicitement — on ne dépend pas du réglage
+# par défaut du dépôt, qui peut être plus permissif.
+permissions:
+  contents: read
+
 jobs:
   batterie:
     runs-on: ubuntu-latest
