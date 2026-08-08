@@ -134,9 +134,16 @@ jours_depuis() {
 rafraichir_base() {
   local URL_BASE="${NPM_GUARD_DB_URL:-https://raw.githubusercontent.com/OnyxynO/plugin-claude-npm-bun-guard/main/data/npm-malware.tsv}"
 
-  # Amorçage sans authentification : un seul fichier, pas de rate limit.
-  # C'est ce qui rend le plugin utilisable par quelqu'un qui n'a pas `gh`.
-  if [ ! -s "$CACHE_MALWARE" ]; then
+  # Fraîcheur AVANT le test `command -v gh` : c'est justement le chemin sans
+  # `gh` — le public principal du plugin — qui, sinon, ne rafraîchit plus
+  # jamais rien après le tout premier amorçage. Base absente OU stamp pas
+  # d'aujourd'hui (le dépôt régénère data/npm-malware.tsv quotidiennement,
+  # cron 5 h UTC : s'aligner sur ce rythme) → on rejoue l'amorçage complet
+  # sans authentification, un seul fichier, pas de rate limit.
+  local age_stamp=9999
+  [ -s "$CACHE_STAMP" ] && age_stamp=$(jours_depuis "$(cat "$CACHE_STAMP")")
+
+  if [ ! -s "$CACHE_MALWARE" ] || [ "$age_stamp" -gt 0 ]; then
     local tmp2; tmp2=$(mktemp) || return 0
     if curl -sf --compressed --max-time 20 "$URL_BASE" -o "$tmp2" 2>/dev/null \
        && [ "$(wc -l < "$tmp2" | tr -d ' ')" -gt 100 ] \
@@ -146,6 +153,9 @@ rafraichir_base() {
     rm -f "$tmp2" 2>/dev/null
   fi
 
+  # L'incrémental `gh` COMPLÈTE le curl, il ne le remplace pas : s'il n'est
+  # pas là, l'amorçage ci-dessus reste le seul mécanisme — et c'est déjà
+  # suffisant pour ne jamais rester figé plus d'un jour.
   command -v gh >/dev/null 2>&1 || return 0
 
   local depuis age

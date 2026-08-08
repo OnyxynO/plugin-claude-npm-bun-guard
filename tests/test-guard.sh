@@ -145,6 +145,90 @@ fi
 
 rm -rf "$CACHE_AMORCAGE_DIR" "$FAUX_GH_DIR"
 
+echo "--- rafraichissement quand le stamp est perime, sans gh (task-9) ---"
+# Public principal du plugin : quelqu'un qui a Claude Code mais pas `gh`.
+# PATH restreint = liens symboliques vers les seuls binaires dont guard.sh a
+# besoin, SAUF `gh` (méthode qui a permis d'établir la preuve du défaut :
+# gh installé et authentifié sur cette machine, il faut donc le retirer
+# explicitement plutôt que compter sur son absence du système).
+FAUX_PATH_DIR=$(mktemp -d)
+for bin in bash jq curl mktemp sort mv rm wc date cat awk grep sed tr head; do
+  chemin=$(command -v "$bin" 2>/dev/null) || continue
+  ln -s "$chemin" "$FAUX_PATH_DIR/$bin"
+done
+
+# Serveur HTTP local déterministe. Pas de file:// : curl sur macOS refuse ce
+# schéma (code 3, vérifié) — ne pas y bâtir un test dessus. Plus de 100
+# lignes pour passer le contrôle anti-page-d'erreur de rafraichir_base.
+SERVEUR_DIR=$(mktemp -d)
+{ printf 'guard-test-sentinelle\t*\n'; i=0; while [ "$i" -lt 150 ]; do printf 'paquet-bidon-%d\t*\n' "$i"; i=$((i+1)); done; } > "$SERVEUR_DIR/npm-malware.tsv"
+python3 -u -m http.server 0 --directory "$SERVEUR_DIR" --bind 127.0.0.1 > "$SERVEUR_DIR/serveur.log" 2>&1 &
+SERVEUR_PID=$!
+PORT=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  PORT=$(grep -oE 'port [0-9]+' "$SERVEUR_DIR/serveur.log" 2>/dev/null | grep -oE '[0-9]+')
+  [ -n "$PORT" ] && break
+  sleep 0.2
+done
+arreter_serveur() { kill "$SERVEUR_PID" 2>/dev/null; wait "$SERVEUR_PID" 2>/dev/null; }
+
+if [ -z "$PORT" ]; then
+  echo "ECHEC (serveur HTTP local n'a pas démarré)"; ECHECS=$((ECHECS+1))
+else
+  URL_LOCALE="http://127.0.0.1:$PORT/npm-malware.tsv"
+
+  # Cas A : base présente mais stamp périmé (hier) → re-téléchargement.
+  CACHE_PERIME_DIR=$(mktemp -d)
+  printf 'ancien-paquet\t*\n' > "$CACHE_PERIME_DIR/npm-malware.tsv"
+  date -u -v-2d +%Y-%m-%d 2>/dev/null > "$CACHE_PERIME_DIR/npm-malware.stamp" \
+    || date -u -d "-2 days" +%Y-%m-%d > "$CACHE_PERIME_DIR/npm-malware.stamp"
+
+  T0=$(date +%s.%N 2>/dev/null || date +%s)
+  printf '{"cwd":"%s","tool_input":{"command":"npm i left-pad"}}' "$DIR" \
+    | env -i PATH="$FAUX_PATH_DIR" HOME="$HOME" \
+          NPM_GUARD_CACHE_DIR="$CACHE_PERIME_DIR" \
+          NPM_GUARD_CACHE="$CACHE_PERIME_DIR/npm-malware.tsv" \
+          NPM_GUARD_DB_URL="$URL_LOCALE" \
+      bash "$H" >/dev/null 2>&1
+  T1=$(date +%s.%N 2>/dev/null || date +%s)
+
+  telechargee=false
+  grep -q '^guard-test-sentinelle' "$CACHE_PERIME_DIR/npm-malware.tsv" 2>/dev/null && telechargee=true
+  stamp_jour=false
+  [ "$(cat "$CACHE_PERIME_DIR/npm-malware.stamp" 2>/dev/null)" = "$(date -u +%Y-%m-%d)" ] && stamp_jour=true
+
+  printf '%-46s %-6s ' "sans gh, stamp perime : base retelechargee" "$([ "$telechargee" = true ] && echo oui || echo non)"
+  if [ "$telechargee" = true ] && [ "$stamp_jour" = true ]; then echo "OK"; else echo "ECHEC (telechargee=$telechargee, stamp_jour=$stamp_jour)"; ECHECS=$((ECHECS+1)); fi
+  echo "  latence mesurée (curl 64 Ko simulé) : $(awk -v a="$T0" -v b="$T1" 'BEGIN{printf "%.3f s", b-a}' 2>/dev/null)"
+  rm -rf "$CACHE_PERIME_DIR"
+
+  # Cas B : stamp du jour → aucun téléchargement (pas de coût réseau à
+  # chaque commande). On coupe le serveur juste avant : si guard.sh tentait
+  # quand même le curl, il échouerait proprement (réseau KO, on laisse
+  # passer) — mais la base ne doit alors PAS contenir la sentinelle.
+  CACHE_FRAIS_DIR=$(mktemp -d)
+  printf 'ancien-paquet\t*\n' > "$CACHE_FRAIS_DIR/npm-malware.tsv"
+  date -u +%Y-%m-%d > "$CACHE_FRAIS_DIR/npm-malware.stamp"
+  arreter_serveur
+
+  printf '{"cwd":"%s","tool_input":{"command":"npm i left-pad"}}' "$DIR" \
+    | env -i PATH="$FAUX_PATH_DIR" HOME="$HOME" \
+          NPM_GUARD_CACHE_DIR="$CACHE_FRAIS_DIR" \
+          NPM_GUARD_CACHE="$CACHE_FRAIS_DIR/npm-malware.tsv" \
+          NPM_GUARD_DB_URL="$URL_LOCALE" \
+      bash "$H" >/dev/null 2>&1
+
+  pas_touchee=true
+  grep -q '^guard-test-sentinelle' "$CACHE_FRAIS_DIR/npm-malware.tsv" 2>/dev/null && pas_touchee=false
+
+  printf '%-46s %-6s ' "stamp du jour : aucun telechargement" "$([ "$pas_touchee" = true ] && echo oui || echo non)"
+  if [ "$pas_touchee" = true ]; then echo "OK"; else echo "ECHEC (la base a ete retelechargee alors que le stamp etait du jour)"; ECHECS=$((ECHECS+1)); fi
+  rm -rf "$CACHE_FRAIS_DIR"
+fi
+
+arreter_serveur 2>/dev/null
+rm -rf "$FAUX_PATH_DIR" "$SERVEUR_DIR"
+
 echo "--- configuration ---"
 printf 'keyv\t= 4.5.4\n' >> "$CACHE"
 r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i eslint"}}' "$DIR" \
