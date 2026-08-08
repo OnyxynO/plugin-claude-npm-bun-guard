@@ -154,9 +154,11 @@ La distinction compte : la seconde ligne est la seule qui justifie de la parano�
    plugin du tout. C'est l'usage prévu — le dépôt est un point de départ, pas un
    abonnement.
 
-Les commits sont signés depuis le 2026-08-08 : GitHub affiche `Verified` sur ceux qui
-suivent. Les précédents ne le sont pas et le resteront — les resigner imposerait de
-réécrire l'historique, ce qui invaliderait tout commit déjà épinglé par quelqu'un.
+Les commits sont signés et vérifiés par GitHub à partir de `c706a39` (2026-08-08). Ceux
+d'avant ne le sont pas et le resteront : les resigner imposerait de réécrire l'historique,
+ce qui invaliderait tout commit déjà épinglé par quelqu'un. Deux commits de cette même
+journée portent une signature que GitHub n'attribue pas — clé remplacée en cours de route,
+mentionné ici plutôt que masqué.
 
 Note d'honnêteté sur ce que la signature ne prouve pas : elle atteste que le commit vient
 de ma clé, pas que son contenu est sûr. Et un checksum publié dans ce même dépôt ne
