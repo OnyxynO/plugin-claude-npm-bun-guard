@@ -154,10 +154,14 @@ La distinction compte : la seconde ligne est la seule qui justifie de la parano�
    plugin du tout. C'est l'usage prévu — le dépôt est un point de départ, pas un
    abonnement.
 
-Note d'honnêteté : mes commits ne sont pas signés à ce jour, et un checksum publié dans ce
-même dépôt ne prouverait rien contre un compte compromis (l'attaquant mettrait les deux à
-jour). L'épinglage d'un commit que vous avez lu reste la seule garantie qui ne dépende pas
-de moi.
+Les commits sont signés depuis le 2026-08-08 : GitHub affiche `Verified` sur ceux qui
+suivent. Les précédents ne le sont pas et le resteront — les resigner imposerait de
+réécrire l'historique, ce qui invaliderait tout commit déjà épinglé par quelqu'un.
+
+Note d'honnêteté sur ce que la signature ne prouve pas : elle atteste que le commit vient
+de ma clé, pas que son contenu est sûr. Et un checksum publié dans ce même dépôt ne
+prouverait rien contre un compte compromis, l'attaquant mettant les deux à jour d'un même
+geste. L'épinglage d'un commit que vous avez lu reste la garantie qui ne dépend pas de moi.
 
 ## Limites connues
 
