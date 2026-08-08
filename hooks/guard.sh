@@ -21,6 +21,15 @@
 
 set -uo pipefail
 
+# ⚠️ `-f` (noglob) est indispensable, pas une précaution de style. Ce script
+# découpe une commande utilisateur avec des expansions volontairement NON
+# quotées (`set -- $commande`, puis les paquets passés à `--dry-run`) : le
+# découpage en mots est voulu, l'expansion des jokers ne l'est pas. Sans lui,
+# `npm i key*` lancé dans un dépôt contenant un fichier `keyv` devient
+# `npm i keyv` — le hook accuse alors un paquet que personne n'a demandé.
+# Aucune expansion de chemin n'est nécessaire ailleurs dans ce fichier.
+set -f
+
 # Désactivation complète — première chose lue, pour qu'un utilisateur bloqué
 # puisse toujours reprendre la main sans désinstaller le plugin.
 [ -n "${NPM_GUARD_DISABLE:-}" ] && exit 0

@@ -125,6 +125,40 @@ maîtriser votre chaîne, forkez ce dépôt et activez l'Action chez vous, ou po
 
 Le hook affiche la date de sa base à chaque décision, et avertit au-delà de 7 jours.
 
+## Installer sans me faire confiance
+
+Ce dépôt vous demande d'exécuter un script shell avant chacune de vos commandes, et de
+télécharger une base de données depuis un compte GitHub individuel — le mien. C'est la
+forme de dépendance qui a produit l'incident dont cet outil est né. Prenez la précaution
+au sérieux plutôt que de me croire sur parole.
+
+**Ce que le pire cas peut faire**, selon ce qui est compromis :
+
+| Élément compromis | Conséquence maximale |
+|---|---|
+| La base `data/npm-malware.tsv` | **Faux négatifs** : le hook se tait là où il devrait bloquer, et vous laisse croire que vous êtes couvert. C'est un fichier de données, lu ligne à ligne — jamais exécuté. Aucune exécution de code possible par ce biais. |
+| Le script `hooks/guard.sh` | **Exécution de code arbitraire** avant chacune de vos commandes. C'est le risque réel, et il est propre à tout plugin — pas seulement à celui-ci. |
+
+La distinction compte : la seconde ligne est la seule qui justifie de la paranoïa.
+
+**Le mode d'emploi méfiant**, dans l'ordre :
+
+1. **Lisez `hooks/guard.sh`** (458 lignes). Ce que vous devriez y vérifier vous-même :
+   aucun `eval` ni exécution dynamique ; trois destinations réseau en tout
+   (`raw.githubusercontent.com` pour la base, `registry.npmjs.org` pour les dates de
+   publication, l'API GitHub via `gh` si vous l'avez) ; aucune télémétrie, aucun serveur
+   m'appartenant.
+2. **Forkez, et pointez `NPM_GUARD_DB_URL` sur votre fork.** Activez-y l'Action : vous ne
+   dépendez plus de ma disponibilité ni de mon compte pour vos données.
+3. **Ou copiez simplement `hooks/guard.sh` dans vos propres hooks**, sans installer ce
+   plugin du tout. C'est l'usage prévu — le dépôt est un point de départ, pas un
+   abonnement.
+
+Note d'honnêteté : mes commits ne sont pas signés à ce jour, et un checksum publié dans ce
+même dépôt ne prouverait rien contre un compte compromis (l'attaquant mettrait les deux à
+jour). L'épinglage d'un commit que vous avez lu reste la seule garantie qui ne dépende pas
+de moi.
+
 ## Limites connues
 
 - Un paquet compromis dont l'advisory n'existe pas encore n'est pas détecté par le
@@ -160,6 +194,12 @@ Le huitième n'a été trouvé ni par les tests ni par la relecture, mais au pre
 à cache vide, la base n'était jamais écrite alors que la date du jour l'était — le hook
 annonçait donc « base à jour » avec zéro entrée. Aucun des dix-sept cas de la batterie ne
 partait d'un cache vide.
+
+Le neuvième est venu d'une relecture adversariale du dépôt, en se demandant ce qu'un
+évaluateur extérieur refuserait d'installer : le découpage de la commande laissait le shell
+étendre les jokers, si bien que `npm i key*` lancé dans un dépôt contenant un fichier `keyv`
+accusait un paquet que personne n'avait demandé. Le correctif tient en un `set -f` ; le cas
+de test, lui, échoue bien sans lui (vérifié avant de l'écrire).
 
 ## Licence
 

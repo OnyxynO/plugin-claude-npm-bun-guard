@@ -330,6 +330,25 @@ fi
 arreter_serveur2 2>/dev/null
 rm -rf "$FAUX_PATH_DIR2" "$FAUX_GH_DIR" "$SERVEUR_DIR2"
 
+echo "--- robustesse : aucun globbing sur les noms de paquets ---"
+# La commande interceptée est découpée par `set -- $commande`, expansion NON
+# quotée : sans `set -f`, un nom contenant `*` est étendu sur les fichiers du
+# répertoire courant. Un dépôt qui contient un fichier nommé `keyv` transforme
+# alors `npm i key*` en `npm i keyv` — le hook accuse un paquet que l'utilisateur
+# n'a jamais demandé. Le fichier piège ci-dessous rend le défaut observable :
+# sans le correctif, la décision passe de « rien » à « ask ».
+DIR_GLOB=$(mktemp -d)
+printf '{"name":"g","version":"1.0.0"}\n' > "$DIR_GLOB/package.json"
+: > "$DIR_GLOB/keyv"
+CACHE_GLOB=$(mktemp -d)
+printf 'keyv\t= 6.0.0\n' > "$CACHE_GLOB/npm-malware.tsv"
+r=$( cd "$DIR_GLOB" && printf '{"cwd":"%s","tool_input":{"command":"npm i key*"}}' "$DIR_GLOB" \
+  | env PATH="/usr/bin:/bin:/usr/sbin:/sbin" NPM_GUARD_CACHE="$CACHE_GLOB/npm-malware.tsv" \
+    bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+printf '%-46s %-6s ' "nom avec * : pas d'expansion de fichier" "${r:--}"
+if [ "${r:--}" = "-" ]; then echo "OK"; else echo "ECHEC (attendu -)"; ECHECS=$((ECHECS+1)); fi
+rm -rf "$DIR_GLOB" "$CACHE_GLOB"
+
 echo "--- configuration ---"
 printf 'keyv\t= 4.5.4\n' >> "$CACHE"
 r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i eslint"}}' "$DIR" \
