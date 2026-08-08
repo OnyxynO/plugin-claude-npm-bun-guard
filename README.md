@@ -83,6 +83,10 @@ Le hook affiche la date de sa base à chaque décision, et avertit au-delà de 7
   contrôle malware — c'est le rôle de la quarantaine de 3 jours, qui ne couvre pas une
   version piégée publiée il y a plus longtemps sans avoir été détectée.
 - `pnpm` et `yarn` : pas de résolution d'arbre.
+- Si le téléchargement de `data/npm-malware.tsv` échoue et que seul `gh` est disponible,
+  l'amorçage ne couvre que les **7 derniers jours** (de l'ordre de 4 000 entrées contre
+  11 000), et les jours suivants avancent par incréments sans jamais remonter cet
+  historique. Le repli protège donc moins que le chemin nominal.
 - Réseau coupé, `jq` ou `python3` absents : le hook laisse passer. Un garde-fou qui casse
   le travail hors ligne finit désactivé.
 
@@ -94,9 +98,14 @@ Le hook affiche la date de sa base à chaque décision, et avertit au-delà de 7
 intercepterait la commande de test elle-même.
 
 La batterie comprend des **mutations** — on déclare une version saine malveillante et on
-vérifie que l'installation qui la tire en transitif est bien refusée. Sept défauts ont été
+vérifie que l'installation qui la tire en transitif est bien refusée. Huit défauts ont été
 trouvés à l'écriture de ce hook, tous silencieux : les tests « la commande passe » restaient
 verts pour chacun, parce qu'un garde-fou qui ne fait *rien* les passe aussi.
+
+Le huitième n'a été trouvé ni par les tests ni par la relecture, mais au premier run réel :
+à cache vide, la base n'était jamais écrite alors que la date du jour l'était — le hook
+annonçait donc « base à jour » avec zéro entrée. Aucun des dix-sept cas de la batterie ne
+partait d'un cache vide.
 
 ## Licence
 
