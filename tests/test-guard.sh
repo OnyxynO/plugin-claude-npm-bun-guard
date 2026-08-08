@@ -345,22 +345,68 @@ cp "$SAUVE" "$CACHE"
 # change, sans rien prouver. On force donc le déclenchement de façon
 # structurelle : `is-number` est un paquet ancien (publié en 2018), stable et
 # jamais retiré du registre — son âge en jours dépasse 3 mais reste toujours
-# inférieur à 99999, quelle que soit la date du run. La paire ci-dessous prouve
-# deux choses indépendamment du calendrier : que la quarantaine sait se
-# déclencher (99999 jours ⇒ ask), et que 0 la désactive (0 jour ⇒ -).
+# inférieur à 99999, quelle que soit la date du run.
+#
+# (task-10) Ce cas restait néanmoins non déterministe pour une autre raison :
+# le cooldown interroge le VRAI registre npm en direct
+# (registry.npmjs.org/-/v1/search) pour obtenir la date de publication. Si cet
+# appel échoue, est throttlé, ou si `is-number` ne figure pas dans les 20
+# premiers résultats — observé sur le runner GitHub, jamais reproduit en local
+# — guard.sh fait `continue` (comportement voulu : ne jamais bloquer sur une
+# incertitude réseau) et le cas tombe faute d'`ask`. On neutralise donc ce
+# second axe de non-déterminisme avec un faux `curl` qui route selon l'URL
+# reçue (même technique que les cas « sans gh » et « amorçage » plus haut) :
+# réponse figée pour registry.npmjs.org, transmission au vrai curl sinon — car
+# guard.sh utilise aussi curl pour l'amorçage de la base malveillante, que ce
+# faux binaire ne doit pas casser. La base est par ailleurs pré-remplie avec un
+# stamp du jour pour que `rafraichir_base` ne tente elle-même aucun appel
+# réseau ici (elle a sa propre couverture dédiée plus haut).
+FAUX_CURL_DIR=$(mktemp -d)
+export REAL_CURL
+REAL_CURL=$(command -v curl)
+cat > "$FAUX_CURL_DIR/curl" <<'EOF'
+#!/usr/bin/env bash
+# Mime l'API de recherche npm pour "is-number" avec une date de publication
+# ancienne et fixe (2018, jamais périmée ni jamais "trop fraîche"). Toute
+# autre URL (amorçage de la base malveillante) part vers le vrai curl, dont
+# le chemin est transmis par la variable d'environnement REAL_CURL.
+url=""
+for a in "$@"; do
+  case "$a" in http*://*) url="$a" ;; esac
+done
+case "$url" in
+  *registry.npmjs.org*)
+    printf '{"objects":[{"package":{"name":"is-number","version":"7.0.0","date":"2018-01-04T00:00:00.000Z"}}]}\n'
+    exit 0
+    ;;
+  *)
+    exec "$REAL_CURL" "$@"
+    ;;
+esac
+EOF
+chmod +x "$FAUX_CURL_DIR/curl"
+
 CACHE_COOLDOWN=$(mktemp -d)
+printf 'paquet-inoffensif\t*\n' > "$CACHE_COOLDOWN/npm-malware.tsv"
+date -u +%Y-%m-%d > "$CACHE_COOLDOWN/npm-malware.stamp"
+
+# La paire ci-dessous prouve deux choses indépendamment du calendrier ET du
+# registre npm réel : que la quarantaine sait se déclencher (99999 jours ⇒
+# ask), et que 0 la désactive (0 jour ⇒ -).
 r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i is-number"}}' "$DIR" \
-  | NPM_GUARD_CACHE_DIR="$CACHE_COOLDOWN" NPM_GUARD_CACHE="$CACHE_COOLDOWN/npm-malware.tsv" \
+  | PATH="$FAUX_CURL_DIR:$PATH" \
+    NPM_GUARD_CACHE_DIR="$CACHE_COOLDOWN" NPM_GUARD_CACHE="$CACHE_COOLDOWN/npm-malware.tsv" \
     NPM_GUARD_COOLDOWN_DAYS=99999 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
 printf '%-46s %-6s ' "COOLDOWN_DAYS=99999 declenche toujours" "${r:--}"
 if [ "${r:--}" = "ask" ]; then echo "OK"; else echo "ECHEC (attendu ask)"; ECHECS=$((ECHECS+1)); fi
 
 r=$(printf '{"cwd":"%s","tool_input":{"command":"npm i is-number"}}' "$DIR" \
-  | NPM_GUARD_CACHE_DIR="$CACHE_COOLDOWN" NPM_GUARD_CACHE="$CACHE_COOLDOWN/npm-malware.tsv" \
+  | PATH="$FAUX_CURL_DIR:$PATH" \
+    NPM_GUARD_CACHE_DIR="$CACHE_COOLDOWN" NPM_GUARD_CACHE="$CACHE_COOLDOWN/npm-malware.tsv" \
     NPM_GUARD_COOLDOWN_DAYS=0 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
 printf '%-46s %-6s ' "COOLDOWN_DAYS=0 desactive la quarantaine" "${r:--}"
 if [ "${r:--}" = "-" ]; then echo "OK"; else echo "ECHEC (attendu -)"; ECHECS=$((ECHECS+1)); fi
-rm -rf "$CACHE_COOLDOWN"
+rm -rf "$CACHE_COOLDOWN" "$FAUX_CURL_DIR"
 
 echo
 if [ "$ECHECS" -eq 0 ]; then echo "TOUS LES CAS PASSENT"; else echo "$ECHECS ECHEC(S)"; fi
