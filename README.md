@@ -38,6 +38,53 @@ intercepte l'instant où le script `preinstall` va s'exécuter.
 L'arbre est résolu par `--dry-run`, qui calcule les dépendances **sans exécuter aucun
 script** et sans rien écrire sur le disque.
 
+## À quoi ressemble une décision
+
+Sorties réelles du hook, pas des reconstitutions. Le refus porte sur une entrée
+authentique de la base ; la quarantaine, sur une version fraîche du jour.
+
+**Refus** — `npm i @keyv/redis@6.0.0`
+
+```
+⛔ PAQUET MALVEILLANT dans ce qui allait être installé (1 correspondance(s)).
+
+  • @keyv/redis@6.0.0  (plage piégée : = 6.0.0)
+Ces paquets figurent dans la base des malwares npm de GitHub, à la version que
+la résolution de dépendances a retenue. Ce n'est pas une vulnérabilité à corriger
+par une montée de version : le code est piégé, et son script preinstall
+s'exécuterait avant tout le reste (vol de jetons GitHub/npm, clés cloud,
+secrets CI, détournement des hooks Claude Code).
+
+⚠️ La détection porte sur l'ARBRE COMPLET : le paquet en cause peut être une
+dépendance transitive que tu n'as jamais demandée — c'est le mode opératoire du
+worm keyv du 2026-08-04.
+
+À faire : identifier qui tire ce paquet (`npm why <paquet>`), puis épingler une
+version saine via `overrides` (bornée à la lignée, jamais en `>=`).
+
+Base : 11069 entrées, mise à jour le 2026-08-08.
+```
+
+**Quarantaine** — `npm i vite`, un 2026-08-08 où `vite@8.2.1` avait deux jours
+
+```
+⚠️  « vite@8.2.1 » a été publiée il y a 2 jour(s) — moins que le délai de sécurité de 3 jours.
+
+Une version très fraîche est le seul signal disponible AVANT qu'une compromission
+ne soit détectée et qu'un advisory n'existe. Le 2026-08-04, keyv@6.0.0 a contaminé
+400+ paquets en 30 minutes depuis un compte de mainteneur compromis.
+
+Rien n'indique un problème ici — c'est un délai, pas une accusation. Options :
+  • attendre 1 jour(s) de plus ;
+  • installer une version antérieure déjà éprouvée ;
+  • confirmer si cette version est réellement nécessaire maintenant.
+
+Publiée le : 2026-08-06T13:47:48.588Z
+Base : 11069 entrées, mise à jour le 2026-08-08.
+```
+
+Toute autre commande ne produit **aucune sortie** : le hook se tait et laisse passer.
+
 ## Installation
 
     /plugin marketplace add OnyxynO/plugin-claude-npm-bun-guard
