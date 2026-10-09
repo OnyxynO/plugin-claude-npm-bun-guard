@@ -104,6 +104,9 @@ analyser_commande() {
     SOUS="$1"; shift
     case "$SOUS" in
       install|i|ci|add|update|up|dlx) ;;
+      # `npm upgrade` est un alias d'update ; `bun upgrade` met à jour le binaire bun
+      # lui-même, ce n'est pas une installation de paquets.
+      upgrade) [ "$GESTIONNAIRE" = bun ] && return 1 ;;
       *) return 1 ;;
     esac
   fi
@@ -291,15 +294,13 @@ if [ ! -s "$arbre" ]; then
   done
 fi
 
-[ -s "$arbre" ] || exit 0
-
 # --- 4. croisement nom + version contre les plages ---------------------------
 # Le nom seul ne suffit pas : `keyv`, `flat-cache` et `file-entry-cache` sont
 # présents dans le parc en versions saines alors que leurs homonymes piégés
 # (6.0.0, 6.1.24, 11.1.6) figurent dans la base. Matcher sur le nom donnerait
 # trois faux positifs permanents.
 
-if [ -s "$CACHE_MALWARE" ] && command -v python3 >/dev/null 2>&1; then
+if [ -s "$CACHE_MALWARE" ] && [ -s "$arbre" ] && command -v python3 >/dev/null 2>&1; then
   python3 - "$CACHE_MALWARE" "$arbre" > "$arbre.res" 2>/dev/null <<'PY'
 import sys
 
@@ -402,7 +403,53 @@ $(mention_fraicheur)"
   fi
 fi
 
-# --- 5. cooldown sur les paquets explicitement demandés ----------------------
+# --- 5. update : délai de publication exigé ----------------------------------
+# Le cooldown ci-dessous ne voit que les paquets NOMMÉS. Un `update` sans argument
+# résout un arbre entier de versions neuves sans aucun délai (incident blog-astro du
+# 2026-10-08 : 36 paquets de moins de 3 jours déployés). Placé APRÈS le contrôle
+# malware : un paquet piégé doit rester un refus, pas une simple question.
+
+delai_dans_config() {
+  local f
+  for f in "$repertoire/bunfig.toml" "$HOME/.bunfig.toml"; do
+    [ -f "$f" ] && grep -q '^[[:space:]]*minimumReleaseAge[[:space:]]*=' "$f" && return 0
+  done
+  for f in "$repertoire/.npmrc" "$HOME/.npmrc"; do
+    [ -f "$f" ] && grep -q -E '^[[:space:]]*(min-release-age|before)[[:space:]]*=' "$f" && return 0
+  done
+  return 1
+}
+
+case "$SOUS" in
+  update|up|upgrade)
+    case " $commande " in
+      *" --minimum-release-age"*|*" --min-release-age"*|*" --before"*) ;;
+      *)
+        if [ "$COOLDOWN_JOURS" -gt 0 ] 2>/dev/null && ! delai_dans_config; then
+          case "$GESTIONNAIRE" in
+            bun) option="--minimum-release-age=$(( COOLDOWN_JOURS * 86400 ))" ;;
+            npm) option="--min-release-age=$COOLDOWN_JOURS" ;;
+            *)   option="(l'option de délai de publication de $GESTIONNAIRE)" ;;
+          esac
+          demander "⚠️  « $GESTIONNAIRE $SOUS » sans délai de publication : toutes les versions résolues
+peuvent avoir été publiées il y a quelques minutes.
+
+Le délai de ${COOLDOWN_JOURS} jours ne s'applique qu'aux paquets nommés ; une mise à jour
+d'ensemble y échappe entièrement. Le 2026-08-04, keyv@6.0.0 a contaminé 400+ paquets
+en 30 minutes — un update lancé dans cette fenêtre les aurait tous tirés.
+
+Relancer plutôt avec : $GESTIONNAIRE $SOUS $option
+(ou fixer le délai une fois pour toutes : \`minimumReleaseAge\` dans bunfig.toml,
+\`min-release-age\` dans .npmrc)
+
+$(mention_fraicheur)"
+        fi
+        ;;
+    esac
+    ;;
+esac
+
+# --- 6. cooldown sur les paquets explicitement demandés ----------------------
 
 for spec in $paquets_nommes; do
   if [ "${spec:0:1}" = "@" ]; then

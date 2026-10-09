@@ -33,6 +33,7 @@ intercepte l'instant où le script `preinstall` va s'exécuter.
 |---|---|
 | Un paquet de l'arbre à installer est un malware connu (nom **et** version) | Refus |
 | Une version demandée a moins de 3 jours | Demande de confirmation |
+| Un `update` / `upgrade` lancé sans délai de publication (`--minimum-release-age`, `--min-release-age`, `--before`, ni réglage dans `bunfig.toml` / `.npmrc`) | Demande de confirmation, avec la commande corrigée |
 | Le reste | Silence — quelques millisecondes hors gestionnaire de paquets (`ls`, `npm run build`…) ; de l'ordre de 300 ms pour une installation, le temps du `--dry-run` et du contrôle de quarantaine ; quelques secondes une fois par jour, lorsque la base est rafraîchie |
 
 L'arbre est résolu par `--dry-run`, qui calcule les dépendances **sans exécuter aucun
@@ -173,7 +174,9 @@ geste. L'épinglage d'un commit que vous avez lu reste la garantie qui ne dépen
 - **La quarantaine ne regarde que les paquets que vous nommez**, pas l'arbre résolu — à la
   différence du contrôle malware. Une dépendance transitive fraîchement piégée et pas encore
   déclarée échappe donc aux deux contrôles. C'est le trou que la mise à jour quotidienne de la
-  base réduit sans le fermer.
+  base réduit sans le fermer. Pour un `update` d'ensemble, le hook exige donc que le délai
+  soit délégué au gestionnaire lui-même (`bun update --minimum-release-age=259200`,
+  `npm update --min-release-age=3`), qui l'applique, lui, à tout l'arbre.
 - `pnpm` et `yarn` : pas de résolution d'arbre.
 - Si le téléchargement de `data/npm-malware.tsv` échoue et que seul `gh` est disponible,
   l'amorçage ne couvre que les **7 derniers jours** (de l'ordre de 4 000 entrées contre

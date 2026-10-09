@@ -63,6 +63,28 @@ echo "--- apres restauration ---"
 verif "npm i eslint@9.9.1"            "npm : de nouveau sain"        "-"
 verif "bun add eslint@9.9.1"          "bun : de nouveau sain"        "-"
 
+echo "--- update : delai de publication exige ---"
+# Incident blog-astro 2026-10-08 : `bun update` a monte 36 paquets de moins de 3 jours.
+# Le cooldown de l'etape 5 ne voit que les paquets NOMMES ; un update sans argument
+# resout tout un arbre neuf. Sans delai explicite, on demande confirmation.
+verif "bun update"                              "bun update sans delai"          "ask"
+verif "npm update"                              "npm update sans delai"          "ask"
+verif "npm upgrade"                             "npm upgrade (alias)"            "ask"
+verif "bun update --minimum-release-age=259200" "bun update avec delai"          "-"
+verif "npm update --min-release-age=3"          "npm update avec min-release-age" "-"
+verif "npm update --before=2026-10-06"          "npm update avec --before"       "-"
+verif "bun upgrade"                             "bun upgrade (binaire bun)"      "-"
+printf '[install]\nminimumReleaseAge = 259200\n' > "$DIR/bunfig.toml"
+verif "bun update"                              "bunfig.toml fixe le delai"      "-"
+rm -f "$DIR/bunfig.toml"
+printf 'min-release-age=3\n' > "$DIR/.npmrc"
+verif "npm update"                              ".npmrc fixe le delai"           "-"
+rm -f "$DIR/.npmrc"
+r=$(printf '{"cwd":"%s","tool_input":{"command":"bun update"}}' "$DIR" \
+  | NPM_GUARD_COOLDOWN_DAYS=0 bash "$H" | jq -r '.hookSpecificOutput.permissionDecision // "-"' 2>/dev/null)
+printf '%-46s %-6s ' "COOLDOWN_DAYS=0 : update libre" "${r:--}"
+if [ "${r:--}" = "-" ]; then echo "OK"; else echo "ECHEC (attendu -)"; ECHECS=$((ECHECS+1)); fi
+
 echo "--- amorcage sans gh (PATH neutralise) ---"
 # ⚠️ Ce cas ne prouve PAS le téléchargement : le cache est déjà rempli.
 # Il exerce le repli sur paquets nommés quand PATH est neutralisé (ni gh, ni npm, ni bun).
